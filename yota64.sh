@@ -36,7 +36,7 @@ ZERO_MONEY_CODE="sa"
 
 [ -x "$(command -v curl)" ] || die "curl required"
 
-REDIR=$(curl -v -sw "%{redirect_url}" http://ya.ru)
+REDIR=$(curl -sw "%{redirect_url}" http://ya.ru)
 [ $? -eq 0 ] || die "Connection issue ret $?"
 [ $REDIR == "https://ya.ru/" ] && exit 0
 
