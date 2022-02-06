@@ -10,20 +10,46 @@ die (){
   exit 1
 }
 
-req (){
+click_resume () {
   CODE=$1
 
   cmd="curl $URL $HDRS --data-raw '{\"serviceCode\":\"$CODE\"}' -sw '%{http_code}' -o /dev/null"
 
   #echo === CMD: $cmd
   RESP_CODE=$(eval $cmd -sw '%{http_code}' -o /dev/null)
-  [ $? -eq 0 ] || die "Connection issue: ret $?"
+  [ $? -eq 0 ] || die "Connection error $? to yota.ru"
   if [ $RESP_CODE -eq 200 ]; then
-    retun 0
+    return 0
   else
     echo "This method failed with HTTP response $RESP_CODE"
     return 1
   fi
+}
+
+# Sometimes curl returns -1, that's why try few times
+check_web () {
+  [ -x "$(command -v curl)" ] || die "curl required"
+
+  t=1
+  while [ $t -lt 5 ]
+  do
+    REDIR=$(curl -sw "%{redirect_url}" http://ya.ru) # -v to debug
+    if [ $? -eq 0 ]; then
+      if [ $REDIR == "https://ya.ru/" ]; then
+        #echo "=== Internet detected on $t time ==="
+        return 0
+      else
+        echo "Got redirection to captive portal $REDIR"
+        break
+      fi
+    fi
+
+    [ $t -eq 5 ] && die "Connection to ya.ru failed after $t times"
+    sleep 1s
+    #echo "=== Try #$t ya.ru ==="
+    t=$(( $t + 1 ))
+  done
+  return $t
 }
 
 UUID="$(cat /proc/sys/kernel/random/uuid)"
@@ -34,11 +60,7 @@ HDRS="-H Content-Type:application/json -H x-transactionid:$UUID -A \"$AGENT\""
 FREE_TARIFF_CODE="light"
 ZERO_MONEY_CODE="sa"
 
-[ -x "$(command -v curl)" ] || die "curl required"
-
-REDIR=$(curl -sw "%{redirect_url}" http://ya.ru)
-[ $? -eq 0 ] || die "Connection issue ret $?"
-[ $REDIR == "https://ya.ru/" ] && exit 0
+check_web && exit 0
 
 echo `date`
 echo "=== There is no Internet connection ==="
@@ -47,10 +69,11 @@ echo "=== There is no Internet connection ==="
 # https://hello.yota.ru/sa?redirurl=http:%2F%2Fya.ru%2F
 
 echo "=== Try click to resume for free tariff ==="
-req $FREE_TARIFF_CODE
-[ $? -eq 0 ] || echo "Try next variant"
+click_resume $FREE_TARIFF_CODE
 
-echo "=== Try click to resume on out of money ==="
-# https://hello.yota.ru/sa?redirurl=http:%2F%2Fya.ru%2F
-req $ZERO_MONEY_CODE
-[ $? -eq 0 ] || die "Enabling Internet failed: ret $?"
+if [ $? -ne 0 ]; then
+  echo "=== Try click to resume on out of money ==="
+  click_resume $ZERO_MONEY_CODE || die "Enabling Internet failed: ret $?"
+fi
+
+check_web || exit $?
