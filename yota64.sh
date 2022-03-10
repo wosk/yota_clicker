@@ -35,7 +35,7 @@ check_web () {
   do
     REDIR=$(curl -sw "%{redirect_url}" http://ya.ru) # -v to debug
     if [ $? -eq 0 ]; then
-      if [ $REDIR == "https://ya.ru/" ]; then
+      if [[ $REDIR == https://ya.ru* ]] || [[ $REDIR == http://ya.ru* ]] ; then
         #echo "=== Internet detected on $t time ==="
         return 0
       else
