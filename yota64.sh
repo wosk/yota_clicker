@@ -4,13 +4,20 @@
 # Add to crontab to run every minute
 # */1 * * * * /root/yota64.sh >> /tmp/log/yota.log
 
+FREE_TARIFF_CODE="light"
+ZERO_MONEY_CODE="sa"
 
-die (){
+die () {
   echo "YOTA64 die: $1"
   exit 1
 }
 
 click_resume () {
+  UUID="$(cat /proc/sys/kernel/random/uuid)"
+  URL="https://hello.yota.ru/wa/v1/service/temp"
+  AGENT='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36'
+  HDRS="-H Content-Type:application/json -H x-transactionid:$UUID -A \"$AGENT\""
+
   CODE=$1
 
   cmd="curl $URL $HDRS --data-raw '{\"serviceCode\":\"$CODE\"}' -sw '%{http_code}' -o /dev/null"
@@ -34,46 +41,41 @@ check_web () {
   while [ $t -lt 5 ]
   do
     REDIR=$(curl -sw "%{redirect_url}" http://ya.ru) # -v to debug
-    if [ $? -eq 0 ]; then
-      if [[ $REDIR == https://ya.ru* ]] || [[ $REDIR == http://ya.ru* ]] ; then
-        #echo "=== Internet detected on $t time ==="
-        return 0
-      else
-        echo "Got redirection to captive portal $REDIR"
-        break
-      fi
+    if [ $? -ne 0 ]; then
+      [ $t -eq 5 ] && die "Connection to ya.ru failed after $t times"
+      sleep 1s
+      #echo "=== Try #$t ya.ru ==="
+      t=$(( $t + 1 ))
+      continue
     fi
 
-    [ $t -eq 5 ] && die "Connection to ya.ru failed after $t times"
-    sleep 1s
-    #echo "=== Try #$t ya.ru ==="
-    t=$(( $t + 1 ))
+    if [[ $REDIR == https://ya.ru* ]] || [[ $REDIR == http://ya.ru* ]] ; then
+      #echo "=== Internet detected on $t time ==="
+      exit 0
+    fi
+
+    echo `date`
+    echo "=== There is no Internet connection ==="
+
+    case $REDIR in
+      http://hello.yota.ru/light/*)
+        click_resume $FREE_TARIFF_CODE || die "Resuming Internet failed: ret $?"
+        return 0
+        ;;
+      
+      # https://hello.yota.ru/sa?redirurl=http:%2F%2Fya.ru%2F
+      http://hello.yota.ru/sa/*)
+        click_resume $ZERO_MONEY_CODE || die "Resuming Internet failed: ret $?"
+        return 0
+        ;;
+      
+      *)
+        die "Got unexpected redirection URL $REDIR"
+        ;;
+    esac
+
   done
   return $t
 }
-
-UUID="$(cat /proc/sys/kernel/random/uuid)"
-URL="https://hello.yota.ru/wa/v1/service/temp"
-AGENT='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36'
-HDRS="-H Content-Type:application/json -H x-transactionid:$UUID -A \"$AGENT\""
-
-FREE_TARIFF_CODE="light"
-ZERO_MONEY_CODE="sa"
-
-check_web && exit 0
-
-echo `date`
-echo "=== There is no Internet connection ==="
-
-# TODO fetch service code from redirect url
-# https://hello.yota.ru/sa?redirurl=http:%2F%2Fya.ru%2F
-
-echo "=== Try click to resume for free tariff ==="
-click_resume $FREE_TARIFF_CODE
-
-if [ $? -ne 0 ]; then
-  echo "=== Try click to resume on out of money ==="
-  click_resume $ZERO_MONEY_CODE || die "Enabling Internet failed: ret $?"
-fi
 
 check_web || exit $?
