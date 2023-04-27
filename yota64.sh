@@ -12,16 +12,30 @@ die () {
   exit 1
 }
 
+bump_date () {
+  # Set recent date to avoid curl error:
+  # "SSL_connect failed with error -150: ASN date error, current date before"
+  last_upd_date=`date -r $0 +%s`
+  cur_date=`date +%s`
+  if [ $last_upd_date -gt $cur_date ]
+  then
+    date -s @`date -r $0 +%s`
+    echo New date: `date`
+  fi
+}
+
 click_resume () {
-  UUID="$(cat /proc/sys/kernel/random/uuid)"
-  URL="https://hello.yota.ru/wa/v1/service/temp"
-  AGENT='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36'
-  HDRS="-H Content-Type:application/json -H x-transactionid:$UUID -A \"$AGENT\""
+  AUTH_URL="https://hi.yota.ru/wa/v1/auth/authDeviceByIp"
+  HDRS="-H Content-Type:application/json"
+  TOKEN=$(curl $AUTH_URL $HDRS -s | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
 
   CODE=$1
+  CLICK_URL="https://hi.yota.ru/wa/v1/service/temp"
+  AGENT='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36'
+  HDRS=$HDRS" -H 'Authorization: Bearer "$TOKEN"' -A \"$AGENT\""
+  cmd="curl $CLICK_URL $HDRS --data-raw '{\"serviceCode\":\"$CODE\"}'"
 
-  cmd="curl $URL $HDRS --data-raw '{\"serviceCode\":\"$CODE\"}' -sw '%{http_code}' -o /dev/null"
-
+  echo "=== Click resume for $1 mode ==="
   #echo === CMD: $cmd
   RESP_CODE=$(eval $cmd -sw '%{http_code}' -o /dev/null)
   [ $? -eq 0 ] || die "Connection error $? to yota.ru"
@@ -56,15 +70,17 @@ check_web () {
 
     echo `date`
     echo "=== There is no Internet connection ==="
+    bump_date
 
     case $REDIR in
-      http://hello.yota.ru/light/*)
+      # https://hi.yota.ru/light?redirurl=http%3A%2F%2Fya%2Eru%2F
+      http://hi.yota.ru/light*)
         click_resume $FREE_TARIFF_CODE || die "Resuming Internet failed: ret $?"
         return 0
         ;;
       
-      # https://hello.yota.ru/sa?redirurl=http:%2F%2Fya.ru%2F
-      http://hello.yota.ru/sa/*)
+      # https://hi.yota.ru/sa?redirurl=http:%2F%2Fya.ru%2F
+      http://hi.yota.ru/sa*)
         click_resume $ZERO_MONEY_CODE || die "Resuming Internet failed: ret $?"
         return 0
         ;;
@@ -79,3 +95,6 @@ check_web () {
 }
 
 check_web || exit $?
+
+ntpd -nqN -p ru.pool.ntp.org
+touch $0
