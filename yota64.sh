@@ -42,7 +42,7 @@ click_resume () {
   if [ $RESP_CODE -eq 200 ]; then
     return 0
   else
-    echo "This method failed with HTTP response $RESP_CODE"
+    echo "Click for $1 failed with HTTP response $RESP_CODE"
     return 1
   fi
 }
@@ -54,7 +54,7 @@ check_web () {
   t=1
   while [ $t -lt 5 ]
   do
-    REDIR=$(curl -sw "%{redirect_url}" http://ya.ru) # -v to debug
+    REDIR=$(curl -s -L -I -w "%{url_effective}" http://ya.ru -o /dev/null) # -v to debug
     if [ $? -ne 0 ]; then
       [ $t -eq 5 ] && die "Connection to ya.ru failed after $t times"
       sleep 1s
@@ -74,13 +74,13 @@ check_web () {
 
     case $REDIR in
       # https://hi.yota.ru/light?redirurl=http%3A%2F%2Fya%2Eru%2F
-      http://hi.yota.ru/light*)
+      https://hi.yota.ru/light*)
         click_resume $FREE_TARIFF_CODE || die "Resuming Internet failed: ret $?"
         return 0
         ;;
-      
+
       # https://hi.yota.ru/sa?redirurl=http:%2F%2Fya.ru%2F
-      http://hi.yota.ru/sa*)
+      https://hi.yota.ru/sa*)
         click_resume $ZERO_MONEY_CODE || die "Resuming Internet failed: ret $?"
         return 0
         ;;
@@ -91,6 +91,8 @@ check_web () {
     esac
 
   done
+
+  echo "No connection"
   return $t
 }
 
